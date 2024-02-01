@@ -1,0 +1,15 @@
+
+######################################################
+# Comando para gerar a imagem com Podman
+######################################################
+# time podman build -t workdir01 -f Containerfile ../quarkus/target
+
+FROM debian/buildd:stable
+
+COPY lib/* /deployment/lib/
+COPY *-runner.jar /deployment/
+
+RUN apt-get update
+RUN apt -y install default-jdk ssh vim
+
+CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
