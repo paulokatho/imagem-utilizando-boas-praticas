@@ -1,0 +1,514 @@
+
+
+- CONTAINERS
+====================================================================================
+
+	Melhores práticas na construção de imagens de containers (tudo sobre cache, tamanho e manutenção de imagens)
+
+
+- GERAÇÃO DE IMAGENS DE CONTAINERS
+====================================================================================
+
+	- Geração de imagens através de Dockerfile ou Container File
+
+
+- UM POUCO DE CONTEXTO
+====================================================================================
+
+	- O grande responsável, gostando ou não pela grande adoção de containers é o Docker
+
+	- Containers já existiam muito antes do Docker ser lançado no Linux
+	- Mas o grande diferencial, a grande sacada, foi a padronização
+
+	- O Docker abriu portas para que outras tecnologias de containers pudessem surgir devido ao movimento de padronização
+		- Inclusive o arquivo que você descreve como será a Imagem do Container é chamado de Dockerfile e as outras empresas geralmente chamam de Containerfile
+
+	- JIB
+		- Na aula masterclass do Elder Moraes, usamos uma extensão do Quarkus para criar imagem de container
+		- Com o JIB não é necessário utilizar o Dockerfile ou Containerfile
+		- Porem se as imagens forem muito complexas, pode ser que com o Jib não consigamos resolver o que for preciso
+			- São casos muito específicos, mas pode acontecer
+
+
+- MÃO NA MASSA
+====================================================================================
+
+
+	-----------------------------------------
+	- Objetivo da Aula
+	-----------------------------------------
+
+		- Objetivo da aula é criar imagens seguindo boas práticas
+
+	-----------------------------------------
+	- Pilares da Gestão de Imagem
+	-----------------------------------------
+		- Três Pilares na gestão de imagens de containers
+			1- Cache
+			2- Tamanho de Imagem
+			3- Manutenção de Imagens ou Manutenabilidade
+
+	=============================================
+	- 1- Cache
+	=============================================
+		- O que é uma imagem de container?
+
+		- A imagem é si, nada mais é do que um arquivo. Um ".tar file"
+		- Então quando crio uma imagem, ele lê o Dockerfile, tem as instruções, ele executa tudo que tem que executar e gera aquele arquivo.
+			- Esse arquivo vai ser utilizado para criar um Container
+		- O que é um Container?
+			- Um Container é uma instância daquela minha imagem
+
+
+		- Para criar uma imagem, ele vai seguir um passo a passo. Então existe um passo a passo para a criação da minha imagem
+		- Cada passo vira uma Layer, uma Camada
+		- O que é essa camada?
+			- É um outro arquivo
+			- É um outro ".tar file - é um outro .tar"
+
+			- Então para gerar uma imagem, ele vai gerar antes várias "imagens menores" que serão cada parte do passo a passo
+			- Depois é gerado a imagem final "unindo" todas essas imagens pequenas
+
+		- Para cada linha dessa imagem, ele vai gerar um Cache dessa linha
+
+
+	- Vamos gerar nossa primeira imagem
+		- Fazer o clone do projeto para rodar os comandos
+			- git@github.com:paulokatho/imagem-utilizando-boas-praticas.git
+
+			- Ir ate o diretorio:
+				- /workdir
+			
+			- Rodar o Comando:
+				- time podman build -t workdir01 -f Containerfile ../quarkus/target
+
+		#######################################################################
+		# Comando para gerar a imagem com Podman - Essa versão não é legal
+		#######################################################################
+		# time podman build -t workdir01 -f Containerfile ../quarkus/target 
+
+			FROM debian/buildd:stable
+
+			COPY lib/* /deployment/lib/
+			COPY *-runner.jar /deployment/
+
+			RUN apt-get update
+			RUN apt -y install default-jdk ssh vim
+
+			CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+			
+			*/-------------------------
+			- Explicando o Script
+			---------------------------
+
+				- RUN apt-get update
+					- Roda o update do linux debian que esta sendo usado
+
+				- RUN apt -y install default-jdk ssh vim
+					- instalando a aplicação "java default" para essa versao do debian
+					- instalando o "ssh"
+					- e instalando o "vim"
+						- "vim" é para fazer debug ou se precisar acessar dentro do container, caso seja necessario
+
+
+
+		#######################################################################
+		# Comando para gerar a imagem com Podman - Essa versão É MELHOR
+		#######################################################################
+		# time podman build -t workdir01 -f Containerfile ../quarkus/target
+
+			FROM debian/buildd:stable
+
+			RUN apt-get update
+			RUN apt -y install default-jdk ssh vim
+
+			COPY lib/* /deployment/lib/
+			COPY *-runner.jar /deployment/
+
+			CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+
+				
+				*/---------------------------------------
+				- Super Dica
+				-----------------------------------------
+					- SEMPRE QUEM MUDA MAIS FICA POR ÚLTIMO PARA GARANTIR QUE A EXECUÇÃO DA IMAGEM DEMORE DEMAIS
+
+				- COPY *-runner.jar /deployment/
+					
+					- ESSA LINHA ACIMA FOI COLOCADA POR ÚLTIMO, POIS QUEM MUDA MAIS, VAI PARA BAIXO.
+					
+						- Para evitar de Ficar Quebrando o Cache que foi Gerado para Cada Linha
+
+
+		-----------------------------------------
+		- Gerar Novo Package da Aplicação
+		-----------------------------------------
+
+			- "mvn clean package"
+				- Digitar o comando acima para gerar uma nova versão da aplicação
+
+				- Isso vai fazer que esse comando (COPY *-runner.jar /deployment/) seja executado, pois o "hash" dele que está no CACHE quando geramos nossa imagem 
+					foi alterado quando fizemos o mvn clean package e isso o "podman docker" vai processar novamente, então leva mais tempo e por isso é
+					importante ele ficar por último no nosso "Containerfile", pois se não, tudo o que estiver abaixo dele ele vai ter que executar de novo
+					e isso torna lento a criação da imagem
+
+
+		--------------------------------------------
+		- Melhorar o "runner.jar" - Não utlizar "*"
+		--------------------------------------------
+
+			- CACHE
+				- Essa tecnica também vai ajudar a melhorar o desempenho do nosso Cache
+
+			- NÃO UTLIZAR "*" PARA DEFINIR QUE SERÁ EXECUTADO TUDO O QUE ESTA NESSE DETERMINADO DIRETORIO - Exemplos Abaixo:
+
+				- Nos comandos abaixo do nosso Containerfile, podemos melhorar uma "vulnerabilidade" que podemos ter e também garantir que o nosso Cache permanessa
+					realizando alteração somente quando o "runner.jar" específico que é o que precisamos for mudado realmente
+
+					COPY lib/* /deployment/lib/
+					COPY *-runner.jar /deployment/
+				
+				- COPY *-runner.jar /deployment/
+				    */- No comando acima conseguimos ver que o "runner.jar" está colocando na imagem tudo o que está no diretorio para dentro da imagem com o "*"
+
+				    - Isso pode ser um problema de vulnerabilidade, pois alguem pode colocar algum arquivo dentro desse diretorio e depois utilizar ele para explorar algo na 
+				    	aplicação quando ela estiver com a imagem containerizada e explorar essa vulnerabilidade
+
+				    - Outra coisa é que colocando o nome específico do que queremos que vire nossa imagem, garantimos que o Cache não quebre toda vez que alguem coloque algum arquivo
+				    	nesse diretório
+
+				    - 2 ganhos
+				    	- Então acaba sendo 2 ganhos
+
+				    		- Vulnerabilidade: diminui o risco de ter arquivos "sensíveis ou desnecessários" rodando na nossa imagem
+				    		- Cache: ajuda o Cache a permanesser intacto até que realmente aja a necessidade de alterar o Cache por alguma mudança de verdade
+
+				    - Então a alteração fica assim, por exemplo
+
+				    	COPY lib/* /deployment/lib/
+						COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+							*/- Obs: COPY lib/*
+
+								*/- Esse comando pode ficar com "*", pois as dependencias geralmente não mudam tanto depois uma certa faze do projeto
+				    			- O 100% correto seria colocar o nome de cada dependencia no lugar do "*", mas por outro lado é desnecessário, pois depois de um 
+				    				tempo elas não seriam tão alteradas assim
+
+
+
+
+					*/- Nosso novo "script" do Containerfile
+
+						#######################################################################
+						# Comando para gerar a imagem com Podman - Essa versão É MELHOR AINDA
+						#######################################################################
+						# time podman build -t workdir01 -f Containerfile ../quarkus/target
+
+							FROM debian/buildd:stable
+
+							RUN apt-get update
+							RUN apt -y install default-jdk ssh vim
+
+							COPY lib/* /deployment/lib/
+							COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+							CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+
+		*/------------------------------------------
+		- Mais um Caso de Melhoria
+		--------------------------------------------
+
+			- Manter as Layer's que tem o mesmo objetivo dentro do mesmo comandos
+			- Exemplo com o script usado acima
+
+				########################################################################
+				# Comando para gerar a imagem com Podman - Essa versão É MELHOR AINDA 2
+				########################################################################
+				# time podman build -t workdir03 -f Containerfile ../quarkus/target
+
+					FROM debian/buildd:stable
+
+					RUN apt-get update && \
+						apt -y install default-jdk ssh vim
+
+					COPY lib/* /deployment/lib/
+					COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+					CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+			
+			*/- Juntando os comandos
+				- Ao juntas os comandos abaixo, eles vão ficar mais simples de serem lidados, pois eles tem o mesmo objetivo que é criar o ambiente
+				- Ele vai demorar um pouco na hora de criar a primeira vez, mas vai ser muito mais facil e simples de lidar
+
+				- Veja abaixo como esse comando ficou:
+
+					- RUN apt-get update && \
+						  apt -y install default-jdk ssh vim
+
+
+			-----------------
+			- OBS IMPORTANTE
+			-----------------
+
+				- Tem que olhar caso a caso, tem que ter o feeling de ir entendendo o que esta acontecendo para ver se compensa ou não agrupar comandos em uma unica Layer
+				- Não é só questão de ver o propósito de cada coisa para que você possa agrupá-las, mas também a FREQUÊNCIA DE MUDANÇA daquela Layer
+				- Exemplo:
+
+					COPY lib/* /deployment/lib/
+					COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+					*/- Esses 2 caras acima poderiam estar juntos, pois eles tem o mesmo propósito, porém não seria "correto" deixar eles agrupados, pois as "libs" geralmente tem
+						poucas mudanças, porém o "runner.jar" sempre vai ter mudanças, então por isso não compensa agrupar esses 2 comandos
+
+		----------------------
+		- Comando "time"
+		----------------------
+
+			- # time podman build -t workdir01 -f Containerfile ../quarkus/target
+
+				- Todos os camandos estão sendo executados com o "time", para podermos ver o tempo de execução e conseguirmos realmente enxergar o tempo que está demorando e os
+					"ganhos" reais de tempo nas execuções, utilizando as melhorias para utilizar o CACHE
+
+
+		- Ao favorecer o CACHE eu também favoreço o tempo de BUILD da minha imagem
+
+			- É IMPORTANTE O TEMPO, POIS GERALMENTE NA "VIDA REAL" SUA IMAGEM NÃO VAI ESTAR SOZINHA EM UM "PIPELINE", ELA VAI ESTAR COM VÁRIAS OUTRAS IMAGENS
+				E MELHORAR O TEMPO DE 3 MINUTOS PARA 2 SEGUNDOS, VAI FAZER MUITA DIFERENÇA
+
+
+	=============================================
+	- 2- Tamanho da Imagem
+	=============================================
+
+		- Geralmente quando se instala um sistema operacional, ele vai instalar coisas que são "recomendadas", são coisas padrão
+			- Claro que essas recomendações e tamanho, dependem de cada sistema operacional que você vai estar utilizando
+
+
+				########################################################################
+				# Comando para gerar a imagem com Podman - Essa versão É MELHOR AINDA 2
+				########################################################################
+				# time podman build -t workdir03 -f Containerfile ../quarkus/target
+
+					FROM debian/buildd:stable
+
+					RUN apt-get update && \
+						apt -y install default-jdk ssh vim
+
+					COPY lib/* /deployment/lib/
+					COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+					CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+			
+		*/----------------------------------------
+		- Não Instalar Dependências Recomendadas
+		------------------------------------------
+
+			- Alterando a instalação da imagem para não instalar as dependencias recomendadas e colocar "yes" em todas as perguntas que são feitas quando a gente instala alguma coisa
+			- Acrescentar "-y" e "--no-install-recommends"
+			- Nosso novo script para instalação do "debian" vai ficar assim
+
+				- RUN apt-get update && \
+						apt -y install --no-install-recommends default-jdk ssh vim
+
+			- Novo codigo para gerar a imagem atualizado
+
+				########################################################################
+				# Comando para gerar a imagem com Podman - Essa versão É MELHOR AINDA 3
+				########################################################################
+				# time podman build -t workdir04 -f Containerfile ../quarkus/target
+
+					FROM debian/buildd:stable
+
+					RUN apt-get update && \
+						apt -y install --no-install-recommends default-jdk ssh vim
+						rm -rf /var/lib/apt/lists/*
+
+					COPY lib/* /deployment/lib/
+					COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+					CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+
+		*/----------------------------------------
+		- Deixar Somente Recursos Necessarios
+		------------------------------------------
+
+			- PRECISAMOS PENSAR EM TER AS MENORES IMAGENS O POSSÍVEL
+
+				- Quando pensamos em imagens de containers, os recursos que o container vai utilizar é compartilhado pelo "host"
+				- Portanto, esses recursos são finitos, mesmo que o servidor tenha "1 tera", porém na vida real, não vai estar somente o seu container lá rodando bonitão
+				- E falando em container, estamos falando em dezenas, centenas ou quem sabe, milhares de containers
+
+
+					- CADA BOA PRÁTICA QUE VOCÊ FAZ PARA TER O BOM USO DE UM RECURSO
+						SEJA MEMORIA, SEJA DISCO, SEJA CPU... É INTERESSANTE, POIS AFETA
+						TODO O ECOSSISTEMA QUE VOCÊ ESTÁ COMPARTILHANDO COM A SUA APLICAÇÃO
+
+			- "ssh" e "vim"
+				- Sempre retirar recursos que você não vai estar usando, como o ssh e o vim, assim como os que estão nesse script que estamos utilizando de exemplo
+				- Mesmo que as vezes dê um problema e tenhamos que debugar, é melhor não deixar eles junto com nossa imagem
+					- Se você tiver que realmente debugar um container... 
+						- Você pode se conectar nele remotamente
+						- Tendo a necessidade de executar um "vi" em um arquivo ou se conectar via "ssh"
+							- Você instala ele pontualmente, resolve o problema e retira esses recursos de "vim" e "ssh"
+
+								- NÃO DEIXE FERRAMENTAS QUE VOCÊ NÃO USA DISPONÍVEIS PARA SE CASO "ALGUM DIA FOR PRECISAR"
+
+								- "Pense nisso":
+									- Essa boa prática vai te ajudar não somente a reduzir o tamanho da imagem, mas também a nível de segurança
+									- "Diminuir a superfície de ataque"
+										- Em segurança existe esse conceito e a ideia é que quanto menos coisas a gente tenha em uma imagem, 
+											em uma aplicação, você diminui a superfície de ataque
+											Pois você tem menos coisas lá na sua imagem/container, então você tem menos coisas que podem
+											ser utilizadas como vulnerabilidade
+									- Por isso não vamos instalar o "vim" e o "ssh"
+
+
+			- Remover o CACHE do Gerenciador do Nosso Gerenciador de Pacotes
+				- Então, como estamos em um Debian e o gerenciador de pacotes dele é o "apt-get" e ele fica nesse pacote "/var/lib/apt/lists/*"
+
+				- rm -rf /var/lib/apt/lists/*
+
+					*/- Vamos acrescentar esse comando acima para remover esse CACHE
+						- Se você estiver com outra distribuição de linux, ou um mac e etc
+						- Cada um vai ter um Gerenciador
+
+					- Então independente da distribuição de instação que vocẽ está utilizando, faça o seguinte quando estiver criando uma imagem que contenha alguma "instação"
+
+						- "Então se você está rodando instalações na criação do seu container e esse gerenciador de instalações tem algum CACHE, descobre onde esse CACHE fica"
+							"e ao final das instalações -> REMOVA ESSE CACHE"
+
+					- Novo codigo para gerar a imagem atualizado, sem o "vim" e o "ssh" e removendo o CACHE
+
+						########################################################################
+						# Comando para gerar a imagem com Podman - Essa versão É MELHOR AINDA 4
+						########################################################################
+						# time podman build -t workdir05 -f Containerfile ../quarkus/target
+
+							FROM debian/buildd:stable
+
+							RUN apt-get update && \
+								apt -y install --no-install-recommends default-jdk
+								rm -rf /var/lib/apt/lists/*
+
+							COPY lib/* /deployment/lib/
+							COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/
+
+							CMD ["java", "-jar", "/deployment/quarkus-1.0.0-SNAPSHOT-runner.jar"]
+
+
+					*/- Já conseguimos baixar o tamanho da nossa imagem, nesse exemplo do Elder Moraes, baixou de 1.22 GB para 1.05 GB (1 ponto 50 GB)
+						somente utilizando essas boas práticas, relacionadas ao tamanho da imagem
+
+						- Não instalando as recomendações
+						- Removendo "ssh" e "vim"
+						- E apagando o CACHE do nosso Gerenciador, o "apt"
+
+
+	=============================================
+	- 3- Manutenção ou Manutenabilidade
+	=============================================
+
+	- 1:
+
+		- O primeiro pilar quando falamos em Manutenção é:
+
+		- SE BASEAR EM IMAGENS OFICIAIS
+
+		- Os mantenedores tem o compromisso de manter a imagem oficial "enxuta", com tratamento de CACHE, com comandos agrupados, tirando os recursos default
+		- Ou seja, a imagem já será o menor possível
+		- Essa imagem pode estar no Dockerhub ou qualquer outro repositório, mas tem que ser uma "imagem oficial"
+
+			# time podman build -t jc-maintain01-do -f 01.02.DO.Dockerfile ../quarkus/target
+
+			FROM openjdk
+
+			COPY lib/* /deployment/lib/
+			COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/app.jar
+
+			CMD ["java", "-jar", "/deployment/app.jar"]
+
+
+		*/- Exemplo, essa imagem do "openjdk" oficial, já está tratada. Já está com vários recursos de boas práticas aplicadas e você vai usar de boa e vai conseguir ter um ótimo desempenho
+
+
+	- 2:
+
+		- Não coloque diretamente "FROM openjdk"
+		- Porque?
+
+			- Porque dessa maneira ele vai pegar sempre a ultima versao.
+			- Você sabe qual é a ultima versão?
+			- Você sabe se sua aplicação foi testada para essa última versão?
+			- Dentre vários outros problemas que você pode vir a ter
+
+		- É "IMPRESCINDÍVEL" você estar utilizando uma teg junto com a definição do sistema que você está tentando instalar
+		- Nesse caso de exemplo vamos para o java 21
+		- Ex:
+			- FROM openjdk:21
+
+
+			- Agora a imagem de estudo nossa vai ficar assim
+
+				# time podman build -t jc-maintain01-do -f 01.02.DO.Dockerfile ../quarkus/target
+
+				FROM openjdk:21
+
+				COPY lib/* /deployment/lib/
+				COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/app.jar
+
+				CMD ["java", "-jar", "/deployment/app.jar"]
+
+	*/
+	- 3:
+
+		- SEMPRE COMECE COM A MENOR IMAGEM POSSÍVEL
+
+
+		- Sempre procure as imagens que estão sendo mantidas por empresas que já tenham um certo nome, coerência, que realmente são comprometidas com o projeto
+		- Nesse nosso caso do java, podemos utilizar o da empresa "eclipse" com a distribuição "temurim"
+		- Procure no site oficial do Dockerhub pela imagem do java 21 mantida pelo eclipse
+
+			- link: https://hub.docker.com/_/eclipse-temurin
+
+		- Agora nosso FROM vai ficar
+
+			FROM eclipse-temurin:21.0.1_12-jre-alpine
+
+
+				# time podman build -t jc-maintain01-do -f 01.02.DO.Dockerfile ../quarkus/target
+
+				FROM eclipse-temurin:21.0.1_12-jre-alpine
+
+				COPY lib/* /deployment/lib/
+				COPY quarkus-1.0.0-SNAPSHOT-runner.jar /deployment/app.jar
+
+				CMD ["java", "-jar", "/deployment/app.jar"]
+
+		
+		*/- Depois quando necessário é possível você ir acrescentando outras funcionalidades
+		- Porém o mais importante é você ir entendendo o passo a passo, não é porque aqui nesse último exemplo, foi possível chegar nessa imagem que vai ter em torno de "200 mb"
+			que o seu projeto vai usar uma imagem tão "enxuta".
+			Possivelmente você vai precisar de outros recursos na sua aplicação real.
+
+		- Mas sempre pense nisso, comece com o menor possível, depois vai acrescentando conforme vai aparecendo as necessidades da sua imagem.
+
+	=============================================
+	- CONCLUSÃO
+	=============================================
+
+
+		- Sabendo todos esses passos que vimos aqui, conseguimos realizar a criação de uma imagem ideal para os nossos projetos
+		- Podemos ter uma boa noção de como deixar ele "enxuto", porém entendendo as necessidades e ir adequando ou deixando os recursos necessários sem deixar coisas
+			que não iremos precisar, ou melhor, que o projeto vai precisar
+
+
+			- "Pensamento"
+				
+				- ASSIM VOCÊ CONSEGUE FAZER O QUE É POSSÍVEL E NÃO IDEAL, PORÉM NEM SEMPRE O QUE É IDEAL, É POSSÍVEL!!!
+				- DEIXE O SEU PROJETO, SUA IMAGEM, O MELHOR QUE VOCÊ PUDER DEIXAR
